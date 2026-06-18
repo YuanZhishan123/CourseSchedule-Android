@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget 预览图占位（实际预览图需在小部件开发者平台上传） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="110dp"
+    android:height="110dp"
+    android:viewportWidth="110"
+    android:viewportHeight="110">
+    <path
+        android:fillColor="#F5F0FF"
+        android:pathData="M0,0h110v110H0z" />
+    <path
+        android:fillColor="#6650A4"
+        android:pathData="M35,35h40v6H35z" />
+    <path
+        android:fillColor="#B4A7D6"
+        android:pathData="M35,45h30v4H35z" />
+    <path
+        android:fillColor="#B4A7D6"
+        android:pathData="M35,52h25v4H35z" />
+    <path
+        android:fillColor="#6650A4"
+        android:pathData="M35,64h40v6H35z" />
+    <path
+        android:fillColor="#B4A7D6"
+        android:pathData="M35,74h30v4H35z" />
+    <path
+        android:fillColor="#B4A7D6"
+        android:pathData="M35,81h25v4H35z" />
+</vector>

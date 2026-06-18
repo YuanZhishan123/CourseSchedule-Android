@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Widget 文字颜色 (浅色模式) -->
+    <color name="widget_primary_color">#FF1A1A1A</color>
+    <color name="widget_secondary_color">#99666666</color>
+    <color name="widget_title_color">#FF424242</color>
+    <color name="widget_divider_color">#1A000000</color>
+    <color name="widget_empty_color">#FF9E9E9E</color>
+</resources>

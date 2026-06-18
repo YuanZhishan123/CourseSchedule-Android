@@ -1,0 +1,39 @@
+# ── Android / Gradle ──
+.gradle/
+build/
+app/build/
+local.properties
+*.iml
+.idea/
+*.apk
+*.aab
+*.jks
+*.keystore
+
+# 允许发布 APK
+!MingYue课程表.apk
+*.jks
+*.keystore
+
+# ── Python ──
+__pycache__/
+*.pyc
+
+# ── 个人数据 ──
+*.json
+
+# ── 反编译产物 ──
+wakeup_extract/
+wakeup_ref.apk
+
+# ── 截图/临时文件 ──
+screenshot_*.png
+*.log
+
+# ── Claude Code ──
+.claude/
+CLAUDE.md
+
+# ── OS ──
+.DS_Store
+Thumbs.db

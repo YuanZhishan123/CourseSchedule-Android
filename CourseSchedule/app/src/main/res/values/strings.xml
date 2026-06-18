@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MingYue课程表</string>
+    <string name="widget_course_name">今日课程</string>
+    <string name="widget_course_desc">快速查看今日课程安排，最多显示两节</string>
+
+</resources>
