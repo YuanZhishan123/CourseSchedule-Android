@@ -14,7 +14,7 @@
 
 ## 下载
 
-[最新 APK](https://github.com/你的用户名/MingYueCourseSchedule/releases)
+[📥 下载 APK (v1.0.0)](https://github.com/YuanZhishan123/MingYue-schedule/releases/download/v1.0.0/MingYue.apk)
 
 ## 技术栈
 
