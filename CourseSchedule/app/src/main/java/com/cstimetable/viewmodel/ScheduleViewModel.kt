@@ -8,6 +8,7 @@ import com.cstimetable.model.Course
 import com.cstimetable.model.Schedule
 import com.cstimetable.model.TimeSlot
 import com.cstimetable.parser.PdfParser
+import com.cstimetable.notify.CourseAlarmReceiver
 import com.cstimetable.widget.CourseWidgetProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -313,6 +314,8 @@ class ScheduleViewModel(application: Application) : AndroidViewModel(application
 
                 root.put("schedule", scheduleJson)
                 dataFile.writeText(root.toString())
+                // 课程数据变更 → 重新调度通知闹钟
+                CourseAlarmReceiver.schedule(getApplication())
             } catch (_: Exception) { }
         }
     }

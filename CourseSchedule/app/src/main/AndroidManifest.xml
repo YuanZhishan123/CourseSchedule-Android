@@ -5,6 +5,12 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
+    <!-- 课程通知：开机自启动恢复定时检查 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- 课程通知：Android 13+ 通知权限 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:name=".CStdApplication"
         android:allowBackup="true"
@@ -22,6 +28,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 课程通知：定时唤醒接收器 -->
+        <receiver
+            android:name=".notify.CourseAlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.cstimetable.notify.CHECK_COURSE" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
         <!-- 课程表小部件 Provider (2×2) — 标准 Android Widget -->
         <receiver
