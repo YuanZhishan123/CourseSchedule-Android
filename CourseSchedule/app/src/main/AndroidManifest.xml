@@ -11,6 +11,9 @@
     <!-- 课程通知：Android 13+ 通知权限 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- 课程通知：Android 12+ 精准闹钟权限 -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
     <application
         android:name=".CStdApplication"
         android:allowBackup="true"

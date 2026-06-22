@@ -71,17 +71,21 @@ class CourseAlarmReceiver : BroadcastReceiver() {
 
             val triggerMs = nextReminder.zonedTrigger.toInstant().toEpochMilli()
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                // Android 12+ 用 AllowWhileIdle 保证 doze 模式准时
-                alarmMgr.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP, triggerMs, pending
-                )
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmMgr.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP, triggerMs, pending
-                )
-            } else {
-                alarmMgr.setExact(AlarmManager.RTC_WAKEUP, triggerMs, pending)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    alarmMgr.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP, triggerMs, pending
+                    )
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    alarmMgr.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP, triggerMs, pending
+                    )
+                } else {
+                    alarmMgr.setExact(AlarmManager.RTC_WAKEUP, triggerMs, pending)
+                }
+            } catch (_: SecurityException) {
+                // 降级：没有精准闹钟权限时，用不精确闹钟（3分钟窗口基本够用）
+                alarmMgr.set(AlarmManager.RTC_WAKEUP, triggerMs, pending)
             }
         }
 
