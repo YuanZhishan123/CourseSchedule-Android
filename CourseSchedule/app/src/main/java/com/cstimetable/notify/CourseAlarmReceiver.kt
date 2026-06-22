@@ -6,96 +6,238 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import org.json.JSONObject
+import java.io.File
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 
 /**
- * 定时唤醒接收器
+ * 精准课程闹钟接收器
  *
- * 使用 AlarmManager 定时触发，检查是否有即将开始的课程。
- * 在 AndroidManifest 中注册为静态 Receiver。
+ * 不再使用轮询，改为为每一节课的提醒时间设置精准闹钟。
+ * 每次闹钟触发后，自动计算下一节课的提醒时间并重新调度。
  *
- * ## 唤醒频率
+ * ## 工作流程
  *
- * 每 15 分钟检查一次（兼顾省电和时效性）。
- * 如果你希望更精确的提醒，可以改为 5 分钟。
+ * schedule(context) → 找到最近的提醒时间 → setExact 精准闹钟
+ * onReceive()      → 发通知 → schedule(context) 设置下一个
  *
- * ## 注册方法
+ * ## 可靠性的保证
  *
- * 调用 [schedule] 开始定时，调用 [cancel] 停止。
+ * - 每次 App 启动 / 课表变更 → 重算所有提醒时间
+ * - Android 12+ 使用 setExactAndAllowWhileIdle 保证 doze 模式下准时唤醒
  */
 class CourseAlarmReceiver : BroadcastReceiver() {
 
     companion object {
-        private const val ACTION_CHECK = "com.cstimetable.notify.CHECK_COURSE"
-        private const val REQUEST_CODE = 7001
+        private const val ACTION_ALARM = "com.cstimetable.notify.COURSE_ALARM"
+        private const val REQUEST_CODE = 7100
+        private const val DATA_FILE = "schedule_data.json"
+        private const val MAX_FUTURE_DAYS = 7  // 最多调度未来7天
+
+        /** 默认时段表 */
+        private val defaultTimeSlots = mapOf(
+            1 to LocalTime.of(8, 0),   2 to LocalTime.of(8, 50),
+            3 to LocalTime.of(9, 55),  4 to LocalTime.of(10, 45),
+            5 to LocalTime.of(11, 35), 6 to LocalTime.of(13, 30),
+            7 to LocalTime.of(14, 20), 8 to LocalTime.of(15, 20),
+            9 to LocalTime.of(16, 10), 10 to LocalTime.of(18, 0),
+            11 to LocalTime.of(18, 50), 12 to LocalTime.of(19, 40),
+        )
 
         /**
-         * 启动定时检查
+         * 调度下一次提醒闹钟。
          *
-         * 调用时机：App 启动、课程数据变更后
+         * 逻辑：
+         * 1. 读取课表数据
+         * 2. 扫描本周 + 未来 MAX_FUTURE_DAYS 天内所有课程
+         * 3. 为每节课计算提醒时间（startTime - remindMinutes）
+         * 4. 找到最近的一个未来提醒时间
+         * 5. 设置精准闹钟
+         *
+         * 调用时机：App 启动、课表变更、每次闹钟触发后
          */
         fun schedule(context: Context) {
+            val pending = getPendingIntent(context)
             val alarmMgr = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            val intent = Intent(context, CourseAlarmReceiver::class.java).apply {
-                action = ACTION_CHECK
-            }
-            val pending = PendingIntent.getBroadcast(
-                context, REQUEST_CODE, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
 
-            // 每 15 分钟触发一次
-            val intervalMs = 15 * 60 * 1000L
-            val triggerTime = System.currentTimeMillis() + intervalMs
+            // 先取消旧的
+            alarmMgr.cancel(pending)
+
+            val nextReminder = findNextReminder(context) ?: return
+
+            val triggerMs = nextReminder.zonedTrigger.toInstant().toEpochMilli()
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                // Android 12+ 不允许精确重复闹钟，用不精确的
-                alarmMgr.setRepeating(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerTime,
-                    intervalMs,
-                    pending
+                // Android 12+ 用 AllowWhileIdle 保证 doze 模式准时
+                alarmMgr.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP, triggerMs, pending
+                )
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmMgr.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP, triggerMs, pending
                 )
             } else {
-                alarmMgr.setRepeating(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerTime,
-                    intervalMs,
-                    pending
-                )
+                alarmMgr.setExact(AlarmManager.RTC_WAKEUP, triggerMs, pending)
             }
         }
 
         /**
-         * 取消定时检查
-         *
-         * 调用时机：课程数据清空后
+         * 取消所有闹钟
          */
         fun cancel(context: Context) {
             val alarmMgr = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            alarmMgr.cancel(getPendingIntent(context))
+        }
+
+        private fun getPendingIntent(context: Context): PendingIntent {
             val intent = Intent(context, CourseAlarmReceiver::class.java).apply {
-                action = ACTION_CHECK
+                action = ACTION_ALARM
             }
-            val pending = PendingIntent.getBroadcast(
+            return PendingIntent.getBroadcast(
                 context, REQUEST_CODE, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            alarmMgr.cancel(pending)
+        }
+
+        // ── 核心：找最近提醒时间 ──────────────────────
+
+        /**
+         * 一条提醒记录
+         * @param triggerTime 提醒触发时间（本地时间）
+         * @param courseName 课程名（用于通知）
+         */
+        data class Reminder(
+            val triggerTime: LocalTime,
+            val triggerDate: LocalDate,
+            val courseName: String,
+            val startPeriod: Int,
+            val endPeriod: Int,
+            val location: String,
+            val minutesUntilClass: Int,
+        ) {
+            val zonedTrigger: ZonedDateTime
+                get() = ZonedDateTime.of(triggerDate, triggerTime, ZoneId.systemDefault())
+        }
+
+        private fun findNextReminder(context: Context): Reminder? {
+            try {
+                val dataFile = File(context.filesDir, DATA_FILE)
+                if (!dataFile.exists()) return null
+
+                val root = JSONObject(dataFile.readText())
+                val scheduleJson = root.getJSONObject("schedule")
+
+                // 计算实际周数
+                val firstWeekDate = root.optString("firstWeekStartDate", "").ifEmpty { null }
+                val savedWeek = root.optInt("currentWeek", 1)
+                val totalWeeks = scheduleJson.optInt("totalWeeks", 20)
+
+                val currentWeek = if (firstWeekDate != null) {
+                    try {
+                        val firstMonday = LocalDate.parse(firstWeekDate)
+                        val today = LocalDate.now()
+                        val daysDiff = today.toEpochDay() - firstMonday.toEpochDay()
+                        val w = (daysDiff / 7).toInt() + 1
+                        w.coerceIn(1, totalWeeks)
+                    } catch (_: Exception) { savedWeek }
+                } else savedWeek
+
+                // 解析时段
+                val periodStartTime = mutableMapOf<Int, LocalTime>()
+                if (scheduleJson.has("timeSlots")) {
+                    val slotsArr = scheduleJson.getJSONArray("timeSlots")
+                    for (i in 0 until slotsArr.length()) {
+                        val slot = slotsArr.getJSONObject(i)
+                        periodStartTime[slot.getInt("period")] =
+                            LocalTime.parse(slot.getString("start"), DateTimeFormatter.ofPattern("HH:mm"))
+                    }
+                }
+
+                // 解析课程
+                val coursesArr = scheduleJson.getJSONArray("courses")
+                val now = LocalTime.now()
+                val today = LocalDate.now()
+                val todayDay = today.dayOfWeek.value.let { if (it == 7) 7 else it }
+
+                val remindMinutes =
+                    CourseNotificationHelper.getInstance()?.let {
+                        CourseNotificationHelper.remindMinutesBefore
+                    } ?: listOf(10)
+
+                val allReminders = mutableListOf<Reminder>()
+
+                for (i in 0 until coursesArr.length()) {
+                    val co = coursesArr.getJSONObject(i)
+                    val day = co.getInt("day")
+                    val startPeriod = co.getInt("startPeriod")
+                    val endPeriod = co.getInt("endPeriod")
+                    val weeks = co.getJSONArray("weeks").let { arr ->
+                        (0 until arr.length()).map { arr.getInt(it) }
+                    }
+                    val name = co.getString("name")
+                    val location = co.optString("location", "")
+
+                    // 只关心当前周
+                    if (currentWeek !in weeks) continue
+
+                    val startTime = periodStartTime[startPeriod]
+                        ?: defaultTimeSlots[startPeriod]
+                        ?: continue
+
+                    for (rm in remindMinutes) {
+                        val remindTime = startTime.minusMinutes(rm.toLong())
+                        if (remindTime.isBefore(LocalTime.MIDNIGHT)) continue // 跨天了，不处理
+
+                        // 计算是哪一天
+                        val daysOffset = if (day >= todayDay) {
+                            day - todayDay
+                        } else {
+                            // 下周
+                            day + 7 - todayDay
+                        }
+
+                        val remindDate = today.plusDays(daysOffset.toLong())
+                        if (daysOffset > MAX_FUTURE_DAYS) continue
+
+                        // 跳过已过期的（今天 + 已过时间）
+                        if (daysOffset == 0 && remindTime.isBefore(now)) continue
+
+                        allReminders.add(Reminder(
+                            triggerTime = remindTime,
+                            triggerDate = remindDate,
+                            courseName = name,
+                            startPeriod = startPeriod,
+                            endPeriod = endPeriod,
+                            location = location,
+                            minutesUntilClass = rm,
+                        ))
+                    }
+                }
+
+                // 返回最近的一个
+                return allReminders.minByOrNull { it.zonedTrigger.toEpochSecond() }
+
+            } catch (_: Exception) { return null }
         }
     }
 
+    // ── 闹钟触发 ────────────────────────────────────
+
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == ACTION_CHECK ||
+        if (intent.action == ACTION_ALARM ||
             intent.action == Intent.ACTION_BOOT_COMPLETED) {
 
             val helper = CourseNotificationHelper.getInstance()
                 ?: CourseNotificationHelper.init(context)
 
-            val sent = helper.sendCourseReminders()
+            helper.sendCourseReminders()
 
-            // 如果没有课程数据，停止定时检查
-            if (sent < 0) {
-                cancel(context)
-            }
+            // 调度下一个提醒
+            schedule(context)
         }
     }
 }

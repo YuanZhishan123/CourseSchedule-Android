@@ -15,7 +15,7 @@
 
 ## 下载
 
-[📥 下载 APK (v1.1.0)](https://github.com/YuanZhishan123/CourseSchedule-Android/releases/download/v1.1.0/MingYue%E8%AF%BE%E7%A8%8B%E8%A1%A8.apk)
+[📥 下载 APK (v1.1.1)](https://github.com/YuanZhishan123/CourseSchedule-Android/releases/download/v1.1.1/MingYue%E8%AF%BE%E7%A8%8B%E8%A1%A8.apk)
 
 ## 手环通知设置
 
